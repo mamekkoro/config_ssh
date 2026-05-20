@@ -1,4 +1,19 @@
-Host *
+
+
+
+Host cradle
+  HostName cradle.icardiology.jp
+  Port 22226
+  User ryo
+  IdentitiesOnly yes
+  IdentityFile ~/.ssh/id_ed25519
+#  IdentityFile ~/.ssh/id_rsa
+  ServerAliveInterval 60
+  ServerAliveCountMax 5
+
+
+# macOS ならキーをエージェント＆キーチェーンへ
+  IgnoreUnknown UseKeychain
   AddKeysToAgent yes
   UseKeychain yes
 

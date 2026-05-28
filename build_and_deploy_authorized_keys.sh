@@ -14,7 +14,7 @@ fi
 tmp_file="$(mktemp)"
 trap 'rm -f "$tmp_file"' EXIT
 
-find "$REPO_DIR" -maxdepth 1 -type f -name '*_id_ed25519.pub' -print0 \
+find "$REPO_DIR" -maxdepth 1 -type f -name '*.id_ed25519.pub' -print0 \
   | sort -z \
   | xargs -0 cat \
   | awk 'NF > 0' \

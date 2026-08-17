@@ -1,49 +1,116 @@
 #!/usr/bin/env bash
-set -eu
+set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SSH_DIR="$HOME/.ssh"
-TOBE_FILE="$SSH_DIR/authorized_keys.tobe"
-AUTH_FILE="$SSH_DIR/authorized_keys"
+CHECK_ONLY=false
+ASSUME_YES=false
 
-if [[ ! -d "$SSH_DIR" ]]; then
-  echo "ERROR: $SSH_DIR does not exist." >&2
-  exit 1
-fi
+usage() {
+  cat <<'EOF'
+Usage: ./build_and_deploy_authorized_keys.sh [--check | --yes]
 
-tmp_file="$(mktemp)"
-trap 'rm -f "$tmp_file"' EXIT
+  --check  Validate the repository and show the deployment plan only.
+  --yes    Deploy without asking for confirmation.
+EOF
+}
 
-find "$REPO_DIR" -maxdepth 1 -type f -name '*.id_ed25519.pub' -print0 \
-  | sort -z \
-  | xargs -0 cat \
-  | awk 'NF > 0' \
-  | sort -u > "$tmp_file"
-
-mv "$tmp_file" "$TOBE_FILE"
-chmod 600 "$TOBE_FILE"
-
-echo "Wrote: $TOBE_FILE"
-echo "Included keys: $(grep -c '^ssh-ed25519 ' "$TOBE_FILE" || true)"
-echo
-
-read -r -p "Deploy $TOBE_FILE to $AUTH_FILE ? [y/N] " answer
-
-case "$answer" in
-  y|Y)
-    if [[ -e "$AUTH_FILE" ]]; then
-      backup="${AUTH_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
-      cp -a "$AUTH_FILE" "$backup"
-      echo "Backup: $backup"
-    fi
-
-    cp -a "$TOBE_FILE" "$AUTH_FILE"
-    chmod 600 "$AUTH_FILE"
-    echo "Deployed: $AUTH_FILE"
+case "${1:-}" in
+  "") ;;
+  --check) CHECK_ONLY=true ;;
+  --yes) ASSUME_YES=true ;;
+  -h|--help)
+    usage
+    exit 0
     ;;
   *)
-    echo "Skipped deploy."
+    usage >&2
+    exit 2
     ;;
 esac
 
+if [[ ! -f "$REPO_DIR/config" || ! -d "$REPO_DIR/config.d" ]]; then
+  echo "ERROR: config or config.d is missing from $REPO_DIR" >&2
+  exit 1
+fi
 
+stage_dir="$(mktemp -d)"
+trap 'rm -rf "$stage_dir"' EXIT
+mkdir -p "$stage_dir/config.d"
+
+cp "$REPO_DIR/config" "$stage_dir/config"
+cp "$REPO_DIR"/config.d/*.conf "$stage_dir/config.d/"
+
+shopt -s nullglob
+pubkey_files=("$REPO_DIR"/*.id_ed25519.pub)
+shopt -u nullglob
+
+if [[ ${#pubkey_files[@]} -eq 0 ]]; then
+  echo "ERROR: no top-level Ed25519 public keys found." >&2
+  exit 1
+fi
+
+for pubkey_file in "${pubkey_files[@]}"; do
+  if ! awk '
+    NF { count++; if ($1 != "ssh-ed25519") invalid = 1 }
+    END { exit !(count == 1 && !invalid) }
+  ' "$pubkey_file"; then
+    echo "ERROR: expected one Ed25519 public key in $pubkey_file" >&2
+    exit 1
+  fi
+  ssh-keygen -l -f "$pubkey_file" >/dev/null
+done
+
+cat "${pubkey_files[@]}" \
+  | awk 'NF > 0' \
+  | LC_ALL=C sort -u > "$stage_dir/authorized_keys"
+
+# Validate the Include layout without depending on the current ~/.ssh files.
+sed "s|~/.ssh/config.d|$stage_dir/config.d|g" \
+  "$stage_dir/config" > "$stage_dir/config.validation"
+
+while IFS= read -r host; do
+  ssh -T -G -F "$stage_dir/config.validation" "$host" >/dev/null
+done < <(
+  awk '$1 == "Host" { for (i = 2; i <= NF; i++) if ($i != "*") print $i }' \
+    "$stage_dir"/config.d/*.conf \
+    | LC_ALL=C sort -u
+)
+
+key_count="$(grep -c '^ssh-ed25519 ' "$stage_dir/authorized_keys" || true)"
+
+echo "Validation passed."
+echo "Ed25519 public keys: $key_count"
+echo
+echo "Deployment plan:"
+echo "  $REPO_DIR/config          -> $SSH_DIR/config"
+echo "  $REPO_DIR/config.d/*.conf -> $SSH_DIR/config.d/"
+echo "  generated public keys     -> $SSH_DIR/authorized_keys"
+echo
+echo "Existing destination files will be replaced without backup."
+
+if [[ "$CHECK_ONLY" == true ]]; then
+  exit 0
+fi
+
+if [[ "$ASSUME_YES" != true ]]; then
+  read -r -p "Deploy all SSH files? [y/N] " answer
+  case "$answer" in
+    y|Y) ;;
+    *)
+      echo "Skipped deploy."
+      exit 0
+      ;;
+  esac
+fi
+
+mkdir -p "$SSH_DIR/config.d"
+chmod 700 "$SSH_DIR" "$SSH_DIR/config.d"
+
+install -m 600 "$stage_dir/config" "$SSH_DIR/config"
+for config_file in "$stage_dir"/config.d/*.conf; do
+  install -m 600 "$config_file" "$SSH_DIR/config.d/$(basename "$config_file")"
+done
+install -m 600 "$stage_dir/authorized_keys" "$SSH_DIR/authorized_keys"
+
+echo "Deployment completed."

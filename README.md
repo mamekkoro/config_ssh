@@ -25,35 +25,33 @@ in `20-tailscale.conf`. Add a public server as its own block in
 
 ### Apply
 
-Back up an existing SSH configuration first, then install both the entry point
-and the included directory:
+The deployment script validates every public key and configured host, then
+installs the client configuration and the generated `authorized_keys` together:
 
 ```sh
-mkdir -p ~/.ssh/config.d
-cp config ~/.ssh/config
-cp config.d/*.conf ~/.ssh/config.d/
-chmod 700 ~/.ssh ~/.ssh/config.d
-chmod 600 ~/.ssh/config ~/.ssh/config.d/*.conf
+./build_and_deploy_authorized_keys.sh --check
+./build_and_deploy_authorized_keys.sh
 ```
 
-The copy commands replace files with the same names. If `~/.ssh/config` already
-contains unrelated settings, merge the `Include` lines into it instead of
-replacing it.
+The second command shows the same plan and asks once before deployment. It
+replaces `~/.ssh/config`, the managed files in `~/.ssh/config.d/`, and
+`~/.ssh/authorized_keys` without creating backups. Use `--yes` only when a
+non-interactive deployment is required.
 
 Check the effective settings before connecting:
 
 ```sh
-ssh -G cradle | grep -E '^(hostname|user|port|identityfile) '
+ssh -G amity  | grep -E '^(hostname|user|port|identityfile) '
 ssh -G gin    | grep -E '^(hostname|user|port|identityfile) '
 ```
 
-Expected differences are `cradle.icardiology.jp` with port `22226` for the
+Expected differences are `amity.riovila.com` with port `22226` for the
 public VPS, and the unmodified MagicDNS hostname with port `22` for Tailscale
 hosts.
 
 ## Public keys
 
-Public SSH keys are stored as `*.pub`. Run
-`./build_and_deploy_authorized_keys.sh` on a target machine to assemble the
-top-level Ed25519 keys, review the prompt, and optionally deploy them to
-`~/.ssh/authorized_keys`. Existing `authorized_keys` is backed up first.
+Public SSH keys are stored as `*.pub`. The deployment script assembles the
+top-level Ed25519 keys, removes duplicate and blank lines, and deploys the
+result to `~/.ssh/authorized_keys`. Files under `rsa/` are retained as reference
+material and are not included.

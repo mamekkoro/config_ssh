@@ -1,19 +1,8 @@
-
-
-
-Host cradle
-  HostName cradle.icardiology.jp
-  Port 22226
-  User ryo
-  IdentitiesOnly yes
-  IdentityFile ~/.ssh/id_ed25519
-#  IdentityFile ~/.ssh/id_rsa
-  ServerAliveInterval 60
-  ServerAliveCountMax 5
-
-
-# macOS ならキーをエージェント＆キーチェーンへ
-  IgnoreUnknown UseKeychain
-  AddKeysToAgent yes
-  UseKeychain yes
-
+# ~/.ssh/config
+#
+# OpenSSH reads these files in lexical order. Host-specific settings come
+# before defaults because OpenSSH uses the first value it obtains.
+Include ~/.ssh/config.d/20-tailscale.conf
+Include ~/.ssh/config.d/30-public-vps.conf
+Include ~/.ssh/config.d/90-common.conf
+Include ~/.ssh/config.d/95-macos.conf

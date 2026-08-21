@@ -35,8 +35,9 @@ installs the client configuration and the generated `authorized_keys` together:
 
 The second command shows the same plan and asks once before deployment. It
 replaces `~/.ssh/config`, the managed files in `~/.ssh/config.d/`, and
-`~/.ssh/authorized_keys` without creating backups. Use `--yes` only when a
-non-interactive deployment is required.
+`~/.ssh/authorized_keys`. Existing destination files are backed up under
+`~/.ssh/backups/config_ssh/<timestamp>/` before replacement. Use `--yes` only
+when a non-interactive deployment is required.
 
 Check the effective settings before connecting:
 

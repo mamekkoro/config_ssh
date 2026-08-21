@@ -87,7 +87,7 @@ echo "  $REPO_DIR/config          -> $SSH_DIR/config"
 echo "  $REPO_DIR/config.d/*.conf -> $SSH_DIR/config.d/"
 echo "  generated public keys     -> $SSH_DIR/authorized_keys"
 echo
-echo "Existing destination files will be replaced without backup."
+echo "Existing destination files will be backed up before replacement."
 
 if [[ "$CHECK_ONLY" == true ]]; then
   exit 0
@@ -107,10 +107,37 @@ fi
 mkdir -p "$SSH_DIR/config.d"
 chmod 700 "$SSH_DIR" "$SSH_DIR/config.d"
 
+backup_dir=""
+backup_existing_file() {
+  local source_file="$1"
+  local relative_path="$2"
+
+  [[ -e "$source_file" ]] || return 0
+
+  if [[ -z "$backup_dir" ]]; then
+    backup_dir="$SSH_DIR/backups/config_ssh/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup_dir"
+    chmod 700 "$SSH_DIR/backups" "$SSH_DIR/backups/config_ssh" "$backup_dir"
+  fi
+
+  mkdir -p "$backup_dir/$(dirname "$relative_path")"
+  cp -p "$source_file" "$backup_dir/$relative_path"
+}
+
+backup_existing_file "$SSH_DIR/config" "config"
+backup_existing_file "$SSH_DIR/authorized_keys" "authorized_keys"
+for config_file in "$stage_dir"/config.d/*.conf; do
+  config_name="$(basename "$config_file")"
+  backup_existing_file "$SSH_DIR/config.d/$config_name" "config.d/$config_name"
+done
+
 install -m 600 "$stage_dir/config" "$SSH_DIR/config"
 for config_file in "$stage_dir"/config.d/*.conf; do
   install -m 600 "$config_file" "$SSH_DIR/config.d/$(basename "$config_file")"
 done
 install -m 600 "$stage_dir/authorized_keys" "$SSH_DIR/authorized_keys"
 
+if [[ -n "$backup_dir" ]]; then
+  echo "Backup: $backup_dir"
+fi
 echo "Deployment completed."
